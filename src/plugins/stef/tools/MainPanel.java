@@ -2,6 +2,8 @@ package plugins.stef.tools;
 
 import icy.common.Version;
 import icy.file.FileUtil;
+import icy.file.xml.XMLPersistent;
+import icy.file.xml.XMLPersistentHelper;
 import icy.gui.component.IcyTextField;
 import icy.gui.component.IcyTextField.TextChangeListener;
 import icy.gui.component.button.IcyButton;
@@ -15,6 +17,7 @@ import icy.resource.ResourceUtil;
 import icy.resource.icon.IcyIcon;
 import icy.type.collection.CollectionUtil;
 import icy.util.ClassUtil;
+import icy.util.JarUtil;
 import icy.util.StringUtil;
 import icy.util.XMLUtil;
 
@@ -28,6 +31,7 @@ import java.awt.Insets;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
 import java.io.File;
+import java.net.URL;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
@@ -65,18 +69,52 @@ import org.w3c.dom.Node;
 public class MainPanel extends JPanel implements ListSelectionListener, TextChangeListener, DocumentListener,
         PluginLoaderListener
 {
-    class PluginDescriptor extends icy.plugin.PluginDescriptor
+    static final String ID_CLASSNAME = "classname";
+    static final String ID_VERSION = "version";
+    static final String ID_URL = "url";
+    static final String ID_NAME = "name";
+    static final String ID_REQUIRED_KERNEL_VERSION = "required_kernel_version";
+    static final String ID_JAR_URL = "jar_url";
+    static final String ID_IMAGE_URL = "image_url";
+    static final String ID_ICON_URL = "icon_url";
+    static final String ID_AUTHOR = "author";
+    static final String ID_CHANGELOG = "changelog";
+    static final String ID_WEB = "web";
+    static final String ID_EMAIL = "email";
+    static final String ID_DESCRIPTION = "description";
+    static final String ID_DEPENDENCIES = "dependencies";
+    static final String ID_DEPENDENCY = "dependency";
+
+    public class PluginDescriptor implements XMLPersistent
     {
-        String className;
+        protected String className;
+        protected String name;
+        protected PluginIdent ident;
+        protected String author;
+        protected String web;
+        protected String email;
+        protected String desc;
+        protected String changesLog;
+
+        protected final List<PluginIdent> required;
 
         public PluginDescriptor()
         {
             super();
+
+            ident = new PluginIdent();
+            author = "";
+            web = "";
+            email = "";
+            desc = "";
+            changesLog = "";
+
+            required = new ArrayList<PluginIdent>();
         }
 
         public PluginDescriptor(icy.plugin.PluginDescriptor plugin)
         {
-            super();
+            this();
 
             ident.setClassName(plugin.getClassName());
             ident.setVersion(plugin.getVersion());
@@ -91,21 +129,98 @@ public class MainPanel extends JPanel implements ListSelectionListener, TextChan
             setEmail(plugin.getEmail());
             setDescription(plugin.getDescription());
             setChangesLog(plugin.getChangesLog());
-            setRepository(plugin.getRepository());
 
-            for (PluginIdent ident : plugin.getRequired())
-                required.add(ident);
+            for (icy.plugin.PluginDescriptor.PluginIdent ident : plugin.getRequired())
+                required.add(new PluginIdent(ident));
+        }
+
+        public boolean loadFromXML(String path)
+        {
+            return XMLPersistentHelper.loadFromXML(this, path);
+        }
+
+        public boolean loadFromXML(URL xmlUrl)
+        {
+            return XMLPersistentHelper.loadFromXML(this, xmlUrl);
+        }
+
+        @Override
+        public boolean loadFromXML(Node node)
+        {
+            if (node == null)
+                return false;
+
+            // get the plugin ident
+            ident.loadFromXML(node);
+
+            setName(XMLUtil.getElementValue(node, ID_NAME, ""));
+            setAuthor(XMLUtil.getElementValue(node, ID_AUTHOR, ""));
+            setWeb(XMLUtil.getElementValue(node, ID_WEB, ""));
+            setEmail(XMLUtil.getElementValue(node, ID_EMAIL, ""));
+            setDescription(XMLUtil.getElementValue(node, ID_DESCRIPTION, ""));
+            setChangesLog(XMLUtil.getElementValue(node, ID_CHANGELOG, ""));
+
+            final Node nodeDependances = XMLUtil.getElement(node, ID_DEPENDENCIES);
+            if (nodeDependances != null)
+            {
+                final ArrayList<Node> nodesDependances = XMLUtil.getChildren(nodeDependances, ID_DEPENDENCY);
+
+                for (Node n : nodesDependances)
+                {
+                    final PluginIdent ident = new PluginIdent();
+                    // required don't need URL information as we now search from classname
+                    ident.loadFromXML(n);
+                    if (!ident.isEmpty())
+                        required.add(ident);
+                }
+            }
+
+            return true;
+        }
+
+        public boolean saveToXML()
+        {
+            return XMLPersistentHelper.saveToXML(this, getXMLFilename());
+        }
+
+        @Override
+        public boolean saveToXML(Node node)
+        {
+            if (node == null)
+                return false;
+
+            ident.saveToXML(node);
+
+            XMLUtil.setElementValue(node, ID_NAME, getName());
+            XMLUtil.setElementValue(node, ID_URL, getXmlUrl());
+            XMLUtil.setElementValue(node, ID_JAR_URL, getJarUrl());
+            XMLUtil.setElementValue(node, ID_IMAGE_URL, getImageUrl());
+            XMLUtil.setElementValue(node, ID_ICON_URL, getIconUrl());
+            XMLUtil.setElementValue(node, ID_AUTHOR, getAuthor());
+            XMLUtil.setElementValue(node, ID_WEB, getWeb());
+            XMLUtil.setElementValue(node, ID_EMAIL, getEmail());
+            XMLUtil.setElementValue(node, ID_DESCRIPTION, getDescription());
+            XMLUtil.setElementValue(node, ID_CHANGELOG, getChangesLog());
+
+            final Element dependances = XMLUtil.setElement(node, ID_DEPENDENCIES);
+            if (dependances != null)
+            {
+                XMLUtil.removeAllChildren(dependances);
+                for (PluginIdent dep : required)
+                    dep.saveToXML(XMLUtil.addElement(dependances, ID_DEPENDENCY));
+            }
+
+            return true;
         }
 
         public void setClassName(String className)
         {
-            this.className = className;
+            ident.className = className;
         }
 
-        @Override
         public String getClassName()
         {
-            return className;
+            return ident.className;
         }
 
         public void setVersion(Version version)
@@ -118,25 +233,21 @@ public class MainPanel extends JPanel implements ListSelectionListener, TextChan
             ident.setRequiredKernelVersion(version);
         }
 
-        @Override
         public String getXmlUrl()
         {
             return getBaseOnlinePath() + ClassUtil.getPathFromQualifiedName(getClassName()) + getXMLExtension();
         }
 
-        @Override
         public String getJarUrl()
         {
             return getBaseOnlinePath() + ClassUtil.getPathFromQualifiedName(getClassName()) + getJarExtension();
         }
 
-        @Override
         public String getImageUrl()
         {
             return getBaseOnlinePath() + ClassUtil.getPathFromQualifiedName(getClassName()) + getImageExtension();
         }
 
-        @Override
         public String getIconUrl()
         {
             return getBaseOnlinePath() + ClassUtil.getPathFromQualifiedName(getClassName()) + getIconExtension();
@@ -182,10 +293,233 @@ public class MainPanel extends JPanel implements ListSelectionListener, TextChan
         /**
          * return associated filename
          */
-        @Override
         public String getFilename()
         {
-            return getBaseLocalPath() + super.getFilename();
+            return getBaseLocalPath() + ClassUtil.getPathFromQualifiedName(getClassName());
+        }
+
+        public String getUrlInternal()
+        {
+            return ident.getUrlInternal();
+        }
+
+        public String getSimpleClassName()
+        {
+            return ident.getSimpleClassName();
+        }
+
+        public String getPackageName()
+        {
+            return ident.getPackageName();
+        }
+
+        /**
+         * Returns the XML file extension.
+         */
+        public String getXMLExtension()
+        {
+            return XMLUtil.FILE_DOT_EXTENSION;
+        }
+
+        /**
+         * return xml filename
+         */
+        public String getXMLFilename()
+        {
+            return getFilename() + getXMLExtension();
+        }
+
+        /**
+         * return icon extension
+         */
+        public String getIconExtension()
+        {
+            return "_icon.png";
+        }
+
+        /**
+         * return icon filename
+         */
+        public String getIconFilename()
+        {
+            return getFilename() + getIconExtension();
+        }
+
+        /**
+         * return image extension
+         */
+        public String getImageExtension()
+        {
+            return ".png";
+        }
+
+        /**
+         * return image filename
+         */
+        public String getImageFilename()
+        {
+            return getFilename() + getImageExtension();
+        }
+
+        /**
+         * Returns the JAR file extension.
+         */
+        public String getJarExtension()
+        {
+            return JarUtil.FILE_DOT_EXTENSION;
+        }
+
+        /**
+         * return jar filename
+         */
+        public String getJarFilename()
+        {
+            return getFilename() + getJarExtension();
+        }
+
+        /**
+         * @return the name
+         */
+        public String getName()
+        {
+            return ident.getName();
+        }
+
+        /**
+         * @return the version
+         */
+        public Version getVersion()
+        {
+            return ident.getVersion();
+        }
+
+        /**
+         * @return the url
+         */
+        public String getUrl()
+        {
+            // url is default XML url
+            return getXmlUrl();
+        }
+
+        /**
+         * @return the desc
+         * @deprecated use {@link #getDescription()} instead
+         */
+        @Deprecated
+        public String getDesc()
+        {
+            return getDescription();
+        }
+
+        /**
+         * @return the description
+         */
+        public String getDescription()
+        {
+            return desc;
+        }
+
+        /**
+         * @return the author
+         */
+        public String getAuthor()
+        {
+            return author;
+        }
+
+        /**
+         * @return the web
+         */
+        public String getWeb()
+        {
+            return web;
+        }
+
+        /**
+         * @return the email
+         */
+        public String getEmail()
+        {
+            return email;
+        }
+
+        /**
+         * @return the changesLog
+         */
+        public String getChangesLog()
+        {
+            return changesLog;
+        }
+
+        /**
+         * @return the requiredKernelVersion
+         */
+        public Version getRequiredKernelVersion()
+        {
+            return ident.getRequiredKernelVersion();
+        }
+
+        /**
+         * @return the required
+         */
+        public List<PluginIdent> getRequired()
+        {
+            return new ArrayList<PluginIdent>(required);
+        }
+
+        /**
+         * @param name
+         *        the name to set
+         */
+        public void setName(String name)
+        {
+            ident.setName(name);
+        }
+
+        /**
+         * @param author
+         *        the author to set
+         */
+        public void setAuthor(String author)
+        {
+            this.author = author;
+        }
+
+        /**
+         * @param web
+         *        the web to set
+         */
+        public void setWeb(String web)
+        {
+            this.web = web;
+        }
+
+        /**
+         * @param email
+         *        the email to set
+         */
+        public void setEmail(String email)
+        {
+            this.email = email;
+        }
+
+        /**
+         * @param desc
+         *        the description to set
+         */
+        public void setDescription(String desc)
+        {
+            this.desc = desc;
+        }
+
+        /**
+         * @param changesLog
+         *        the changesLog to set
+         */
+        public void setChangesLog(String changesLog)
+        {
+            this.changesLog = changesLog;
         }
 
         @Override
@@ -195,26 +529,327 @@ public class MainPanel extends JPanel implements ListSelectionListener, TextChan
         }
     }
 
-    class PluginOnlineIdent extends icy.plugin.PluginDescriptor.PluginOnlineIdent
+    public class PluginIdent implements XMLPersistent
     {
-        public String getUrlInternal()
+        protected String className;
+        protected Version version;
+        protected Version requiredKernelVersion;
+        protected String name;
+        protected String url;
+
+        /**
+         * 
+         */
+        public PluginIdent()
         {
-            return super.getUrl();
+            super();
+
+            // default
+            className = "";
+            version = new Version();
+            requiredKernelVersion = new Version();
+            name = "";
+            url = "";
+        }
+
+        public PluginIdent(icy.plugin.PluginDescriptor.PluginIdent ident)
+        {
+            super();
+
+            className = ident.getClassName();
+            version = ident.getVersion();
+            requiredKernelVersion = ident.getRequiredKernelVersion();
+            name = "";
+            url = "";
         }
 
         @Override
+        public boolean loadFromXML(Node node)
+        {
+            if (node == null)
+                return false;
+
+            setClassName(XMLUtil.getElementValue(node, ID_CLASSNAME, ""));
+            setVersion(new Version(XMLUtil.getElementValue(node, ID_VERSION, "")));
+            setRequiredKernelVersion(new Version(XMLUtil.getElementValue(node, ID_REQUIRED_KERNEL_VERSION, "")));
+            setName(XMLUtil.getElementValue(node, ID_NAME, ""));
+            url = XMLUtil.getElementValue(node, ID_URL, "");
+
+            return true;
+        }
+
+        @Override
+        public boolean saveToXML(Node node)
+        {
+            if (node == null)
+                return false;
+
+            XMLUtil.setElementValue(node, ID_CLASSNAME, getClassName());
+            XMLUtil.setElementValue(node, ID_VERSION, getVersion().toString());
+            XMLUtil.setElementValue(node, ID_REQUIRED_KERNEL_VERSION, getRequiredKernelVersion().toString());
+            XMLUtil.setElementValue(node, ID_NAME, getName());
+            XMLUtil.setElementValue(node, ID_URL, getUrl());
+
+            return true;
+        }
+
+        public boolean isEmpty()
+        {
+            return StringUtil.isEmpty(className) && version.isEmpty() && requiredKernelVersion.isEmpty();
+        }
+
+        /**
+         * @return the name
+         */
+        public String getName()
+        {
+            return name;
+        }
+
+        public void setName(String name)
+        {
+            this.name = name;
+        }
+
+        public String getUrlInternal()
+        {
+            return url;
+        }
+
         public String getUrl()
         {
             return getBaseOnlinePath() + ClassUtil.getPathFromQualifiedName(getClassName())
                     + XMLUtil.FILE_DOT_EXTENSION;
         }
 
+        /**
+         * @return the className
+         */
+        public String getClassName()
+        {
+            return className;
+        }
+
+        /**
+         * @param className
+         *        the className to set
+         */
+        public void setClassName(String className)
+        {
+            this.className = className;
+        }
+
+        /**
+         * return the simple className
+         */
+        public String getSimpleClassName()
+        {
+            return ClassUtil.getSimpleClassName(className);
+        }
+
+        /**
+         * return the package name
+         */
+        public String getPackageName()
+        {
+            return ClassUtil.getPackageName(className);
+        }
+
+        /**
+         * @param version
+         *        the version to set
+         */
+        public void setVersion(Version version)
+        {
+            this.version = version;
+        }
+
+        /**
+         * @return the version
+         */
+        public Version getVersion()
+        {
+            return version;
+        }
+
+        /**
+         * @return the requiredKernelVersion
+         */
+        public Version getRequiredKernelVersion()
+        {
+            return requiredKernelVersion;
+        }
+
+        /**
+         * @param requiredKernelVersion
+         *        the requiredKernelVersion to set
+         */
+        public void setRequiredKernelVersion(Version requiredKernelVersion)
+        {
+            this.requiredKernelVersion = requiredKernelVersion;
+        }
+
         @Override
         public String toString()
         {
             return getName();
         }
     }
+
+    // class PluginDescriptor extends icy.plugin.PluginDescriptor
+    // {
+    // String className;
+    //
+    // public PluginDescriptor()
+    // {
+    // super();
+    // }
+    //
+    // public PluginDescriptor(icy.plugin.PluginDescriptor plugin)
+    // {
+    // super();
+    //
+    // ident.setClassName(plugin.getClassName());
+    // ident.setVersion(plugin.getVersion());
+    // ident.setRequiredKernelVersion(plugin.getRequiredKernelVersion());
+    //
+    // setClassName(plugin.getClassName());
+    // setVersion(plugin.getVersion());
+    // setRequiredKernelVersion(plugin.getRequiredKernelVersion());
+    // setName(plugin.getName());
+    // setAuthor(plugin.getAuthor());
+    // setWeb(plugin.getWeb());
+    // setEmail(plugin.getEmail());
+    // setDescription(plugin.getDescription());
+    // setChangesLog(plugin.getChangesLog());
+    // setRepository(plugin.getRepository());
+    //
+    // for (PluginIdent ident : plugin.getRequired())
+    // required.add(ident);
+    // }
+    //
+    // public void setClassName(String className)
+    // {
+    // this.className = className;
+    // }
+    //
+    // @Override
+    // public String getClassName()
+    // {
+    // return className;
+    // }
+    //
+    // public void setVersion(Version version)
+    // {
+    // ident.setVersion(version);
+    // }
+    //
+    // public void setRequiredKernelVersion(Version version)
+    // {
+    // ident.setRequiredKernelVersion(version);
+    // }
+    //
+    // @Override
+    // public String getXmlUrl()
+    // {
+    // return getBaseOnlinePath() + ClassUtil.getPathFromQualifiedName(getClassName()) +
+    // getXMLExtension();
+    // }
+    //
+    // @Override
+    // public String getJarUrl()
+    // {
+    // return getBaseOnlinePath() + ClassUtil.getPathFromQualifiedName(getClassName()) +
+    // getJarExtension();
+    // }
+    //
+    // @Override
+    // public String getImageUrl()
+    // {
+    // return getBaseOnlinePath() + ClassUtil.getPathFromQualifiedName(getClassName()) +
+    // getImageExtension();
+    // }
+    //
+    // @Override
+    // public String getIconUrl()
+    // {
+    // return getBaseOnlinePath() + ClassUtil.getPathFromQualifiedName(getClassName()) +
+    // getIconExtension();
+    // }
+    //
+    // public List<String> getDependencies()
+    // {
+    // final List<String> result = new ArrayList<String>();
+    //
+    // for (PluginIdent ident : required)
+    // result.add(ident.getClassName());
+    //
+    // return result;
+    // }
+    //
+    // public void setDependencies(List<String> value)
+    // {
+    // required.clear();
+    //
+    // for (String className : value)
+    // {
+    // final PluginIdent ident = new PluginIdent();
+    // ident.setClassName(className);
+    // required.add(ident);
+    // }
+    // }
+    //
+    // public void setDependenciesAsString(String text)
+    // {
+    // setDependencies(CollectionUtil.asList(text.split("\n")));
+    // }
+    //
+    // public String getDependenciesAsString()
+    // {
+    // String result = "";
+    //
+    // for (String s : getDependencies())
+    // result += s + "\n";
+    //
+    // return result;
+    // }
+    //
+    // /**
+    // * return associated filename
+    // */
+    // @Override
+    // public String getFilename()
+    // {
+    // return getBaseLocalPath() + super.getFilename();
+    // }
+    //
+    // @Override
+    // public String toString()
+    // {
+    // return getName();
+    // }
+    // }
+    //
+    // class PluginIdent extends icy.plugin.PluginDescriptor.PluginOnlineIdent
+    // {
+    // public String getUrlInternal()
+    // {
+    // return super.getUrl();
+    // }
+    //
+    // @Override
+    // public String getUrl()
+    // {
+    // return getBaseOnlinePath() + ClassUtil.getPathFromQualifiedName(getClassName())
+    // + XMLUtil.FILE_DOT_EXTENSION;
+    // }
+    //
+    // @Override
+    // public String toString()
+    // {
+    // return getName();
+    // }
+    // }
 
     class IdentListModel extends AbstractListModel
     {
@@ -223,9 +858,9 @@ public class MainPanel extends JPanel implements ListSelectionListener, TextChan
          */
         private static final long serialVersionUID = -4632919608168660268L;
 
-        private final List<PluginOnlineIdent> idents;
+        private final List<PluginIdent> idents;
 
-        public IdentListModel(List<PluginOnlineIdent> idents)
+        public IdentListModel(List<PluginIdent> idents)
         {
             super();
 
@@ -316,10 +951,10 @@ public class MainPanel extends JPanel implements ListSelectionListener, TextChan
      */
     private static final long serialVersionUID = 1488142961657050688L;
 
-    static final Comparator<PluginOnlineIdent> identComparator = new Comparator<PluginOnlineIdent>()
+    static final Comparator<PluginIdent> identComparator = new Comparator<PluginIdent>()
     {
         @Override
-        public int compare(PluginOnlineIdent o1, PluginOnlineIdent o2)
+        public int compare(PluginIdent o1, PluginIdent o2)
         {
             return o1.toString().compareTo(o2.toString());
         }
@@ -354,8 +989,8 @@ public class MainPanel extends JPanel implements ListSelectionListener, TextChan
     private JTextArea pluginDependenciesField;
 
     // internals
-    final Map<PluginOnlineIdent, PluginDescriptor> pluginMap;
-    PluginOnlineIdent currentIdent;
+    final Map<PluginIdent, PluginDescriptor> pluginMap;
+    PluginIdent currentIdent;
     PluginDescriptor currentPlugin;
     int pluginId;
     boolean adjustingFields;
@@ -370,7 +1005,7 @@ public class MainPanel extends JPanel implements ListSelectionListener, TextChan
 
         initialize();
 
-        pluginMap = new HashMap<PluginOnlineIdent, PluginDescriptor>();
+        pluginMap = new HashMap<PluginIdent, PluginDescriptor>();
         currentIdent = null;
         currentPlugin = null;
         pluginId = 1;
@@ -927,7 +1562,7 @@ public class MainPanel extends JPanel implements ListSelectionListener, TextChan
     private void updateOnlinePath()
     {
         // extract base online path from xml url info
-        final PluginOnlineIdent ident = (PluginOnlineIdent) identList.getSelectedValue();
+        final PluginIdent ident = (PluginIdent) identList.getSelectedValue();
 
         if (ident != null)
         {
@@ -951,7 +1586,7 @@ public class MainPanel extends JPanel implements ListSelectionListener, TextChan
 
     void loadXMLFile(String path)
     {
-        final List<PluginOnlineIdent> result = new ArrayList<PluginOnlineIdent>();
+        final List<PluginIdent> result = new ArrayList<PluginIdent>();
 
         final Document document = XMLUtil.loadDocument(path);
         // get plugins node
@@ -965,7 +1600,7 @@ public class MainPanel extends JPanel implements ListSelectionListener, TextChan
 
             for (Node node : nodes)
             {
-                final PluginOnlineIdent ident = new PluginOnlineIdent();
+                final PluginIdent ident = new PluginIdent();
 
                 ident.loadFromXML(node);
 
@@ -979,7 +1614,7 @@ public class MainPanel extends JPanel implements ListSelectionListener, TextChan
 
             // rebuild plugin map
             pluginMap.clear();
-            for (PluginOnlineIdent ident : result)
+            for (PluginIdent ident : result)
                 // load plugin descriptor from file
                 pluginMap.put(ident, loadPluginDescriptor(ident));
 
@@ -1001,9 +1636,9 @@ public class MainPanel extends JPanel implements ListSelectionListener, TextChan
         // update path information before saving XML as they use this information
         pathLabel.setText(path);
 
-        for (Entry<PluginOnlineIdent, PluginDescriptor> entry : pluginMap.entrySet())
+        for (Entry<PluginIdent, PluginDescriptor> entry : pluginMap.entrySet())
         {
-            final PluginOnlineIdent ident = entry.getKey();
+            final PluginIdent ident = entry.getKey();
 
             // save ident in a new node
             if (!ident.isEmpty())
@@ -1027,14 +1662,14 @@ public class MainPanel extends JPanel implements ListSelectionListener, TextChan
         final int saveInd = Math.max(identList.getSelectedIndex(), 0);
 
         // set list model
-        identList.setModel(new IdentListModel(new ArrayList<PluginOnlineIdent>(pluginMap.keySet())));
+        identList.setModel(new IdentListModel(new ArrayList<PluginIdent>(pluginMap.keySet())));
         if (identList.getModel().getSize() > saveInd)
             identList.setSelectedIndex(saveInd);
         else
             identList.setSelectedIndex(identList.getModel().getSize() - 1);
     }
 
-    PluginDescriptor loadPluginDescriptor(PluginOnlineIdent ident)
+    PluginDescriptor loadPluginDescriptor(PluginIdent ident)
     {
         final PluginDescriptor result = new PluginDescriptor();
         final Document document = XMLUtil.loadDocument(getBaseLocalPath()
@@ -1052,9 +1687,9 @@ public class MainPanel extends JPanel implements ListSelectionListener, TextChan
         return result;
     }
 
-    PluginOnlineIdent createIdent(PluginDescriptor plugin)
+    PluginIdent createIdent(PluginDescriptor plugin)
     {
-        final PluginOnlineIdent result = new PluginOnlineIdent();
+        final PluginIdent result = new PluginIdent();
 
         setIdent(result, plugin);
 
@@ -1100,7 +1735,7 @@ public class MainPanel extends JPanel implements ListSelectionListener, TextChan
         ((IdentListModel) identList.getModel()).contentsChanged();
     }
 
-    void setIdent(PluginOnlineIdent ident, PluginDescriptor plugin)
+    void setIdent(PluginIdent ident, PluginDescriptor plugin)
     {
         if ((ident == null) || (plugin == null))
             return;
@@ -1108,7 +1743,6 @@ public class MainPanel extends JPanel implements ListSelectionListener, TextChan
         ident.setClassName(plugin.getClassName());
         ident.setVersion(plugin.getVersion());
         ident.setRequiredKernelVersion(plugin.getRequiredKernelVersion());
-        ident.setUrl(plugin.getUrl());
         ident.setName(plugin.getName());
     }
 
@@ -1214,7 +1848,7 @@ public class MainPanel extends JPanel implements ListSelectionListener, TextChan
             return;
 
         // update current ident & plugin
-        currentIdent = (PluginOnlineIdent) identList.getSelectedValue();
+        currentIdent = (PluginIdent) identList.getSelectedValue();
         if (currentIdent != null)
             currentPlugin = pluginMap.get(currentIdent);
         else

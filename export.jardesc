@@ -11,6 +11,8 @@
         </sealing>
     </manifest>
     <selectedElements exportClassFiles="true" exportJavaFiles="true" exportOutputFolder="false">
+        <file path="/Icy-RepositoryGenerator/README.txt"/>
+        <file path="/Icy-RepositoryGenerator/LICENSE.txt"/>
         <javaElement handleIdentifier="=Icy-RepositoryGenerator/src"/>
     </selectedElements>
 </jardesc>
