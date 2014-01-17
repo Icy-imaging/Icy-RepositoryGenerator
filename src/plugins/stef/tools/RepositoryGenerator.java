@@ -3,7 +3,6 @@
  */
 package plugins.stef.tools;
 
-import icy.gui.frame.IcyFrame;
 import icy.plugin.abstract_.PluginActionable;
 import icy.system.thread.ThreadUtil;
 
@@ -20,15 +19,9 @@ public class RepositoryGenerator extends PluginActionable
             @Override
             public void run()
             {
-                final IcyFrame frame = new IcyFrame("Repository generator", true, true);
-
-                frame.add(new MainPanel());
-
-                frame.setSize(760, 760);
-                frame.addToMainDesktopPane();
-                frame.center();
-                frame.setVisible(true);
+                 new MainFrame(getPreferences("setting"));
             }
         });
     }
-}
+ }   
+ 

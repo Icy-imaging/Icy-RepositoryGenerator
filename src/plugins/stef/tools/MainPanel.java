@@ -13,6 +13,7 @@ import icy.gui.dialog.SaveDialog;
 import icy.plugin.PluginLoader;
 import icy.plugin.PluginLoader.PluginLoaderEvent;
 import icy.plugin.PluginLoader.PluginLoaderListener;
+import icy.preferences.XMLPreferences;
 import icy.resource.ResourceUtil;
 import icy.resource.icon.IcyIcon;
 import icy.type.collection.CollectionUtil;
@@ -30,7 +31,6 @@ import java.awt.GridBagLayout;
 import java.awt.Insets;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
-import java.io.File;
 import java.net.URL;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -69,6 +69,13 @@ import org.w3c.dom.Node;
 public class MainPanel extends JPanel implements ListSelectionListener, TextChangeListener, DocumentListener,
         PluginLoaderListener
 {
+    static final String ID_DEFAULT_CLASSNAME = "default_classname";
+    static final String ID_DEFAULT_VERSION = "default_version";
+    static final String ID_DEFAULT_REQUIRED_KERNEL_VERSION = "default_required_kernel_version";
+    static final String ID_DEFAULT_AUTHOR = "default_author";
+    static final String ID_DEFAULT_WEB = "default_web";
+    static final String ID_DEFAULT_EMAIL = "default_email";
+
     static final String ID_CLASSNAME = "classname";
     static final String ID_VERSION = "version";
     static final String ID_URL = "url";
@@ -1097,17 +1104,17 @@ public class MainPanel extends JPanel implements ListSelectionListener, TextChan
 
                 if (!StringUtil.isEmpty(path))
                 {
-                    final File pluginsFolder = new File(FileUtil.getDirectory(path), "plugins");
-
-                    if (FileUtil.exists(pluginsFolder.getAbsolutePath()))
-                    {
-                        if (!ConfirmDialog
-                                .confirm("Content of the 'plugins' folder will be replaced !\nAre you sure you want to continue ?"))
-                            return;
-
-                        // remove plugins folder
-                        FileUtil.delete(pluginsFolder, true);
-                    }
+                    // final File pluginsFolder = new File(FileUtil.getDirectory(path), "plugins");
+                    //
+                    // if (FileUtil.exists(pluginsFolder.getAbsolutePath()))
+                    // {
+                    // if (!ConfirmDialog
+                    // .confirm("Content of the 'plugins' folder will be replaced !\nAre you sure you want to continue ?"))
+                    // return;
+                    //
+                    // // remove plugins folder
+                    // FileUtil.delete(pluginsFolder, true);
+                    // }
 
                     saveXMLFile(path);
                 }
@@ -1193,8 +1200,16 @@ public class MainPanel extends JPanel implements ListSelectionListener, TextChan
             @Override
             public void actionPerformed(ActionEvent e)
             {
-                pluginMap.remove(identList.getSelectedValue());
-                updatePluginList();
+                final PluginIdent ident = (PluginIdent) identList.getSelectedValue();
+
+                if (ident != null)
+                {
+                    if (ConfirmDialog.confirm("Remove '" + ident.getName() + "' plugin from the list ?"))
+                    {
+                        pluginMap.remove(ident);
+                        updatePluginList();
+                    }
+                }
             }
         });
         GridBagConstraints gbc_deleteButton = new GridBagConstraints();
@@ -1221,9 +1236,13 @@ public class MainPanel extends JPanel implements ListSelectionListener, TextChan
             @Override
             public void actionPerformed(ActionEvent e)
             {
-                PluginDescriptor plugin = getSelectedLocalPlugin();
-                pluginMap.put(createIdent(plugin), plugin);
-                updatePluginList();
+                final PluginDescriptor plugin = getSelectedLocalPlugin();
+
+                if (plugin != null)
+                {
+                    pluginMap.put(createIdent(plugin), plugin);
+                    updatePluginList();
+                }
             }
         });
         addLocalPluginButton.setFlat(true);
@@ -1234,7 +1253,7 @@ public class MainPanel extends JPanel implements ListSelectionListener, TextChan
         gbc_addLocalPluginButton.gridy = 1;
         listActionPanel.add(addLocalPluginButton, gbc_addLocalPluginButton);
 
-        final JTabbedPane tabbedPane = new JTabbedPane(JTabbedPane.TOP);
+        final JTabbedPane tabbedPane = new JTabbedPane(SwingConstants.TOP);
 
         final JSplitPane splitPane = new JSplitPane();
         add(splitPane, BorderLayout.CENTER);
@@ -1261,6 +1280,7 @@ public class MainPanel extends JPanel implements ListSelectionListener, TextChan
         pluginDetailsPanel.add(lblName, gbc_lblName);
 
         pluginNameField = new IcyTextField();
+        pluginNameField.setEnabled(false);
         pluginNameField.setToolTipText("Plugin name");
         GridBagConstraints gbc_pluginNameField = new GridBagConstraints();
         gbc_pluginNameField.insets = new Insets(0, 0, 5, 0);
@@ -1279,6 +1299,7 @@ public class MainPanel extends JPanel implements ListSelectionListener, TextChan
         pluginDetailsPanel.add(lblNewLabel, gbc_lblNewLabel);
 
         pluginVersionField = new IcyTextField();
+        pluginVersionField.setEnabled(false);
         pluginVersionField.setToolTipText("Plugin version information");
         GridBagConstraints gbc_pluginVersionField = new GridBagConstraints();
         gbc_pluginVersionField.insets = new Insets(0, 0, 5, 0);
@@ -1297,6 +1318,7 @@ public class MainPanel extends JPanel implements ListSelectionListener, TextChan
         pluginDetailsPanel.add(lblMinimumKernelVersion, gbc_lblMinimumKernelVersion);
 
         pluginMinKernelVerField = new IcyTextField();
+        pluginMinKernelVerField.setEnabled(false);
         pluginMinKernelVerField.setToolTipText("Minimum kernel version required for this plugin");
         GridBagConstraints gbc_pluginMinKernelVerField = new GridBagConstraints();
         gbc_pluginMinKernelVerField.insets = new Insets(0, 0, 5, 0);
@@ -1315,6 +1337,7 @@ public class MainPanel extends JPanel implements ListSelectionListener, TextChan
         pluginDetailsPanel.add(lblFileNameno, gbc_lblFileNameno);
 
         pluginClassNameField = new IcyTextField();
+        pluginClassNameField.setEnabled(false);
         pluginClassNameField.setToolTipText("Plugin class name (should be \"plugins.author.xxx\" format)");
         GridBagConstraints gbc_pluginClassNameField = new GridBagConstraints();
         gbc_pluginClassNameField.insets = new Insets(0, 0, 5, 0);
@@ -1345,6 +1368,7 @@ public class MainPanel extends JPanel implements ListSelectionListener, TextChan
         pluginDetailsPanel.add(scrollPane_2, gbc_scrollPane_2);
 
         pluginDescriptionField = new JTextArea();
+        pluginDescriptionField.setEnabled(false);
         pluginDescriptionField.setToolTipText("Plugin description");
         scrollPane_2.setViewportView(pluginDescriptionField);
         pluginDescriptionField.setRows(2);
@@ -1358,6 +1382,7 @@ public class MainPanel extends JPanel implements ListSelectionListener, TextChan
         pluginDetailsPanel.add(lblAuthor, gbc_lblAuthor);
 
         pluginAuthorField = new IcyTextField();
+        pluginAuthorField.setEnabled(false);
         pluginAuthorField.setToolTipText("Plugin author name");
         GridBagConstraints gbc_pluginAuthorField = new GridBagConstraints();
         gbc_pluginAuthorField.insets = new Insets(0, 0, 5, 0);
@@ -1376,6 +1401,7 @@ public class MainPanel extends JPanel implements ListSelectionListener, TextChan
         pluginDetailsPanel.add(lblEmail, gbc_lblEmail);
 
         pluginEmailField = new IcyTextField();
+        pluginEmailField.setEnabled(false);
         pluginEmailField.setToolTipText("Contact email");
         GridBagConstraints gbc_pluginEmailField = new GridBagConstraints();
         gbc_pluginEmailField.insets = new Insets(0, 0, 5, 0);
@@ -1394,6 +1420,7 @@ public class MainPanel extends JPanel implements ListSelectionListener, TextChan
         pluginDetailsPanel.add(lblWebsite, gbc_lblWebsite);
 
         pluginWebField = new IcyTextField();
+        pluginWebField.setEnabled(false);
         pluginWebField.setToolTipText("Website URL");
         GridBagConstraints gbc_pluginWebField = new GridBagConstraints();
         gbc_pluginWebField.insets = new Insets(0, 0, 5, 0);
@@ -1423,6 +1450,7 @@ public class MainPanel extends JPanel implements ListSelectionListener, TextChan
         pluginDetailsPanel.add(scrollPane_1, gbc_scrollPane_1);
 
         pluginDependenciesField = new JTextArea();
+        pluginDependenciesField.setEnabled(false);
         pluginDependenciesField.setToolTipText("Plugin dependencies (should be  a list of plugin class name)");
         scrollPane_1.setViewportView(pluginDependenciesField);
         pluginDependenciesField.setRows(4);
@@ -1447,7 +1475,6 @@ public class MainPanel extends JPanel implements ListSelectionListener, TextChan
 
         defaultPluginVersionField = new JTextField();
         defaultPluginVersionField.setToolTipText("Default plugin version");
-        defaultPluginVersionField.setText("1.0.0.0");
         GridBagConstraints gbc_defaultPluginVersionField = new GridBagConstraints();
         gbc_defaultPluginVersionField.insets = new Insets(0, 0, 5, 0);
         gbc_defaultPluginVersionField.fill = GridBagConstraints.HORIZONTAL;
@@ -1466,7 +1493,6 @@ public class MainPanel extends JPanel implements ListSelectionListener, TextChan
 
         defaultPluginMinKernelVerField = new JTextField();
         defaultPluginMinKernelVerField.setToolTipText("Default minimum kernel version required for this plugin");
-        defaultPluginMinKernelVerField.setText("1.4.0.0");
         GridBagConstraints gbc_defaultPluginMinKernelVerField = new GridBagConstraints();
         gbc_defaultPluginMinKernelVerField.insets = new Insets(0, 0, 5, 0);
         gbc_defaultPluginMinKernelVerField.fill = GridBagConstraints.HORIZONTAL;
@@ -1486,7 +1512,6 @@ public class MainPanel extends JPanel implements ListSelectionListener, TextChan
         defaultPluginClassNameField = new JTextField();
         defaultPluginClassNameField
                 .setToolTipText("Default plugin class name (should be \"plugins.author.xxx\" format)");
-        defaultPluginClassNameField.setText("plugins.author.package.MyPlugin");
         GridBagConstraints gbc_defaultPluginClassNameField = new GridBagConstraints();
         gbc_defaultPluginClassNameField.insets = new Insets(0, 0, 5, 0);
         gbc_defaultPluginClassNameField.fill = GridBagConstraints.HORIZONTAL;
@@ -1732,7 +1757,8 @@ public class MainPanel extends JPanel implements ListSelectionListener, TextChan
     {
         getPluginDetails(currentPlugin);
         setIdent(currentIdent, currentPlugin);
-        ((IdentListModel) identList.getModel()).contentsChanged();
+        if (identList.getModel() instanceof IdentListModel)
+            ((IdentListModel) identList.getModel()).contentsChanged();
     }
 
     void setIdent(PluginIdent ident, PluginDescriptor plugin)
@@ -1841,6 +1867,36 @@ public class MainPanel extends JPanel implements ListSelectionListener, TextChan
         return defaultPluginWebField.getText();
     }
 
+    private void setDefaultPluginClassName(String value)
+    {
+        defaultPluginClassNameField.setText(value);
+    }
+
+    private void setDefaultPluginVersion(String value)
+    {
+        defaultPluginVersionField.setText(value);
+    }
+
+    private void setDefaultPluginMinKernelVersion(String value)
+    {
+        defaultPluginMinKernelVerField.setText(value);
+    }
+
+    private void setDefaultPluginAuthor(String value)
+    {
+        defaultPluginAuthorField.setText(value);
+    }
+
+    private void setDefaultPluginEmail(String value)
+    {
+        defaultPluginEmailField.setText(value);
+    }
+
+    private void setDefaultPluginWeb(String value)
+    {
+        defaultPluginWebField.setText(value);
+    }
+
     @Override
     public void valueChanged(ListSelectionEvent e)
     {
@@ -1900,4 +1956,23 @@ public class MainPanel extends JPanel implements ListSelectionListener, TextChan
         updateLocalPluginsList();
     }
 
+    public void loadParams(XMLPreferences prefs)
+    {
+        setDefaultPluginVersion(prefs.get(ID_DEFAULT_VERSION, "1.0.0.0"));
+        setDefaultPluginClassName(prefs.get(ID_DEFAULT_CLASSNAME, "plugins.author.package.MyPlugin"));
+        setDefaultPluginMinKernelVersion(prefs.get(ID_DEFAULT_REQUIRED_KERNEL_VERSION, "1.4.0.0"));
+        setDefaultPluginAuthor(prefs.get(ID_DEFAULT_AUTHOR, ""));
+        setDefaultPluginEmail(prefs.get(ID_DEFAULT_EMAIL, ""));
+        setDefaultPluginWeb(prefs.get(ID_DEFAULT_WEB, ""));
+    }
+
+    public void saveParams(XMLPreferences prefs)
+    {
+        prefs.put(ID_DEFAULT_VERSION, getDefaultPluginVersion());
+        prefs.put(ID_DEFAULT_CLASSNAME, getDefaultPluginClassName());
+        prefs.put(ID_DEFAULT_REQUIRED_KERNEL_VERSION, getDefaultPluginMinKernelVersion());
+        prefs.put(ID_DEFAULT_AUTHOR, getDefaultPluginAuthor());
+        prefs.put(ID_DEFAULT_EMAIL, getDefaultPluginEmail());
+        prefs.put(ID_DEFAULT_WEB, getDefaultPluginWeb());
+    }
 }
